@@ -1,45 +1,72 @@
 import React, { createContext, useContext, useEffect, useState } from 'react'
+import { supabase } from '../utils/supabase.js'
 
 const AppContext = createContext(null)
 const STORAGE_KEY = 'ovs_data_v1'
-const SESSION_KEY = 'ovs_session_v1'
 
 function loadInitialData() {
   const raw = localStorage.getItem(STORAGE_KEY)
   if (raw) {
-    try {
-      return JSON.parse(raw)
-    } catch {
-      // fall through to defaults
-    }
+    try { return JSON.parse(raw) } catch { /* fall through */ }
   }
   return {
     admin: { username: 'admin', password: 'admin123' },
     election: { date: '', startTime: '', endTime: '' },
     candidates: [],
-    voters: []
+    voters: []   // { email, name, hasVoted }
   }
 }
 
 export function AppProvider({ children }) {
   const [data, setData] = useState(loadInitialData)
-  const [session, setSession] = useState(() => {
-    const raw = sessionStorage.getItem(SESSION_KEY)
-    return raw ? JSON.parse(raw) : { voterPin: null, isAdmin: false }
+  const [supabaseUser, setSupabaseUser] = useState(null)
+  const [authLoading, setAuthLoading] = useState(true)
+
+  // Admin session stays local
+  const [isAdmin, setIsAdmin] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('ovs_admin')) === true } catch { return false }
   })
 
+  // Persist app data to localStorage
   useEffect(() => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
   }, [data])
 
+  // Persist admin session
   useEffect(() => {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session))
-  }, [session])
+    sessionStorage.setItem('ovs_admin', JSON.stringify(isAdmin))
+  }, [isAdmin])
 
-  // ---------- Election window helper ----------
+  // Sync Supabase auth state
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      const user = session?.user ?? null
+      setSupabaseUser(user)
+      if (user) ensureVoterExists(user.email)
+      setAuthLoading(false)
+    })
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      const user = session?.user ?? null
+      setSupabaseUser(user)
+      if (user) ensureVoterExists(user.email)
+    })
+
+    return () => subscription.unsubscribe()
+  }, [])
+
+  // Auto-register voter on first login
+  function ensureVoterExists(email) {
+    setData(prev => {
+      if (prev.voters.some(v => v.email === email)) return prev
+      return { ...prev, voters: [...prev.voters, { email, name: email.split('@')[0], hasVoted: false }] }
+    })
+  }
+
+  // ---------- Election window ----------
   function isElectionOpen() {
     const { date, startTime, endTime } = data.election
-    if (!date || !startTime || !endTime) return true // no restriction configured yet
+    if (!date || !startTime || !endTime) return true
     const now = new Date()
     const start = new Date(`${date}T${startTime}`)
     const end = new Date(`${date}T${endTime}`)
@@ -47,29 +74,14 @@ export function AppProvider({ children }) {
   }
 
   // ---------- Voter actions ----------
-  function signupVoter(name, pin) {
-    if (!name.trim() || !pin.trim()) return { ok: false, message: 'Name and PIN are required.' }
-    if (data.voters.some(v => v.pin === pin)) {
-      return { ok: false, message: 'This PIN is already registered. Please log in instead.' }
-    }
-    const newVoter = { pin, name: name.trim(), hasVoted: false }
-    setData(prev => ({ ...prev, voters: [...prev.voters, newVoter] }))
-    return { ok: true }
-  }
-
-  function loginVoter(pin, name) {
-    const voter = data.voters.find(v => v.pin === pin && v.name.toLowerCase() === name.trim().toLowerCase())
-    if (!voter) return { ok: false, message: 'No matching voter found. Check your PIN and name, or sign up.' }
-    setSession(s => ({ ...s, voterPin: pin }))
-    return { ok: true }
-  }
-
-  function logoutVoter() {
-    setSession(s => ({ ...s, voterPin: null }))
-  }
-
   function getCurrentVoter() {
-    return data.voters.find(v => v.pin === session.voterPin) || null
+    if (!supabaseUser) return null
+    return data.voters.find(v => v.email === supabaseUser.email) || null
+  }
+
+  async function logoutVoter() {
+    await supabase.auth.signOut()
+    setSupabaseUser(null)
   }
 
   function castVote(candidateId) {
@@ -77,10 +89,9 @@ export function AppProvider({ children }) {
     if (!voter) return { ok: false, message: 'You must log in first.' }
     if (voter.hasVoted) return { ok: false, message: 'You have already voted. Each voter may vote only once.' }
     if (!isElectionOpen()) return { ok: false, message: 'Voting is not open right now. Check the election schedule.' }
-
     setData(prev => ({
       ...prev,
-      voters: prev.voters.map(v => v.pin === voter.pin ? { ...v, hasVoted: true } : v),
+      voters: prev.voters.map(v => v.email === voter.email ? { ...v, hasVoted: true } : v),
       candidates: prev.candidates.map(c => c.id === candidateId ? { ...c, votes: c.votes + 1 } : c)
     }))
     return { ok: true }
@@ -89,20 +100,31 @@ export function AppProvider({ children }) {
   // ---------- Admin actions ----------
   function loginAdmin(username, password) {
     if (data.admin.username === username.trim() && data.admin.password === password) {
-      setSession(s => ({ ...s, isAdmin: true }))
+      setIsAdmin(true)
       return { ok: true }
     }
     return { ok: false, message: 'Invalid admin credentials.' }
   }
 
-  function logoutAdmin() {
-    setSession(s => ({ ...s, isAdmin: false }))
-  }
+  function logoutAdmin() { setIsAdmin(false) }
 
-  function adminAddCandidate(name, symbol) {
-    if (!name.trim() || !symbol.trim()) return { ok: false, message: 'Candidate name and symbol are required.' }
+  function adminAddCandidate(name, symbol, party, partyLogo, bio, photoUrl, partyLogoUrl) {
+    if (!name.trim()) return { ok: false, message: 'Candidate name is required.' }
     const id = 'c_' + Date.now()
-    setData(prev => ({ ...prev, candidates: [...prev.candidates, { id, name: name.trim(), symbol: symbol.trim(), votes: 0 }] }))
+    setData(prev => ({
+      ...prev,
+      candidates: [...prev.candidates, {
+        id,
+        name: name.trim(),
+        symbol: symbol?.trim() || '—',
+        party: (party || '').trim(),
+        partyLogo: (partyLogo || '').trim(),
+        bio: (bio || '').trim(),
+        photoUrl: photoUrl || '',
+        partyLogoUrl: partyLogoUrl || '',
+        votes: 0
+      }]
+    }))
     return { ok: true }
   }
 
@@ -110,12 +132,17 @@ export function AppProvider({ children }) {
     setData(prev => ({ ...prev, candidates: prev.candidates.filter(c => c.id !== id) }))
   }
 
-  function adminAddVoter(name, pin) {
-    return signupVoter(name, pin)
+  function adminAddVoter(email, name) {
+    if (!email.trim()) return { ok: false, message: 'Email is required.' }
+    if (data.voters.some(v => v.email === email.trim())) {
+      return { ok: false, message: 'This email is already registered.' }
+    }
+    setData(prev => ({ ...prev, voters: [...prev.voters, { email: email.trim(), name: name?.trim() || email.split('@')[0], hasVoted: false }] }))
+    return { ok: true }
   }
 
-  function adminRemoveVoter(pin) {
-    setData(prev => ({ ...prev, voters: prev.voters.filter(v => v.pin !== pin) }))
+  function adminRemoveVoter(email) {
+    setData(prev => ({ ...prev, voters: prev.voters.filter(v => v.email !== email) }))
   }
 
   function setElectionSchedule(date, startTime, endTime) {
@@ -123,20 +150,12 @@ export function AppProvider({ children }) {
   }
 
   const value = {
-    data,
-    session,
+    data, supabaseUser, authLoading, isAdmin,
     isElectionOpen,
-    signupVoter,
-    loginVoter,
-    logoutVoter,
-    getCurrentVoter,
-    castVote,
-    loginAdmin,
-    logoutAdmin,
-    adminAddCandidate,
-    adminRemoveCandidate,
-    adminAddVoter,
-    adminRemoveVoter,
+    getCurrentVoter, logoutVoter, castVote,
+    loginAdmin, logoutAdmin,
+    adminAddCandidate, adminRemoveCandidate,
+    adminAddVoter, adminRemoveVoter,
     setElectionSchedule
   }
 
