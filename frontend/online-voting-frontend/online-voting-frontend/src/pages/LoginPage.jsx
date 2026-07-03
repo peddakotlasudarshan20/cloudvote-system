@@ -5,30 +5,28 @@ import { supabase } from '../utils/supabase.js'
 export default function LoginPage() {
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
 
-  async function handleSendLink(e) {
+  async function handleLogin(e) {
     e.preventDefault()
     if (!email.trim()) { setError('Please enter your email.'); return }
+    if (!password) { setError('Please enter your password.'); return }
     setLoading(true)
     setError('')
 
-    const { error: err } = await supabase.auth.signInWithOtp({
+    const { error: err } = await supabase.auth.signInWithPassword({
       email: email.trim(),
-      options: {
-        shouldCreateUser: true,
-        emailRedirectTo: window.location.origin + '/vote'
-      }
+      password: password
     })
 
     setLoading(false)
     if (err) {
-      setError(err.message || 'Failed to send link. Please try again.')
+      setError(err.message || 'Failed to log in. Please try again.')
       return
     }
-    setSent(true)
+    navigate('/vote')
   }
 
   return (
@@ -38,58 +36,50 @@ export default function LoginPage() {
         <Link to="/" className="link-small">← Home</Link>
       </div>
 
-      {!sent ? (
-        <form className="stub-card" onSubmit={handleSendLink}>
-          <h2 className="display">Voter login</h2>
-          <p className="subtext">
-            Enter your email address and we'll send you a magic link to sign in instantly — no password needed.
-          </p>
+      <form className="stub-card" onSubmit={handleLogin}>
+        <h2 className="display">Voter login</h2>
+        <p className="subtext">
+          Already registered? Enter your email and password to log in and vote.
+        </p>
 
-          <div className="field">
-            <label htmlFor="email">Email address</label>
-            <input
-              id="email"
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              required
-              autoFocus
-            />
-          </div>
-
-          {error && <p className="error-text">{error}</p>}
-
-          <div className="btn-row">
-            <button type="submit" className="btn btn-teal" disabled={loading}>
-              {loading ? 'Sending…' : '✉ Send magic link'}
-            </button>
-          </div>
-
-          <p style={{ marginTop: 20, fontSize: 13, textAlign: 'center', color: 'var(--slate)' }}>
-            First time? Entering your email will register you automatically.
-          </p>
-        </form>
-      ) : (
-        <div className="stub-card" style={{ textAlign: 'center' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>📬</div>
-          <h2 className="display">Check your inbox!</h2>
-          <p className="subtext">
-            We sent a magic link to <strong>{email}</strong>.<br />
-            Click the link in the email to sign in and cast your vote.
-          </p>
-          <p style={{ fontSize: 13, color: 'var(--slate)', marginTop: 20 }}>
-            Didn't receive it?{' '}
-            <button
-              type="button"
-              onClick={() => setSent(false)}
-              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--teal)', textDecoration: 'underline', fontSize: 13, padding: 0 }}
-            >
-              Try again
-            </button>
-          </p>
+        <div className="field">
+          <label htmlFor="login-email">Email address</label>
+          <input
+            id="login-email"
+            type="email"
+            value={email}
+            onChange={e => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            required
+            autoFocus
+          />
         </div>
-      )}
+
+        <div className="field">
+          <label htmlFor="login-password">Password</label>
+          <input
+            id="login-password"
+            type="password"
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            placeholder="Enter your password"
+            required
+          />
+        </div>
+
+        {error && <p className="error-text">{error}</p>}
+
+        <div className="btn-row">
+          <button type="submit" className="btn btn-primary" disabled={loading}>
+            {loading ? 'Logging in…' : '🔑 Log in'}
+          </button>
+        </div>
+
+        <p style={{ marginTop: 20, fontSize: 13, textAlign: 'center', color: 'var(--slate)' }}>
+          New voter?{' '}
+          <Link to="/signup" style={{ color: 'var(--teal)' }}>Register here</Link>
+        </p>
+      </form>
     </div>
   )
 }

@@ -501,3 +501,81 @@ table.data-table td {
   border-color: var(--teal);
 }
 
+/* ── Image Upload Component ── */
+.img-upload-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 6px;
+}
+
+.img-upload-preview {
+  width: 80px;
+  height: 80px;
+  object-fit: cover;
+  border-radius: 6px;
+  border: 1.5px solid var(--line);
+  background: var(--paper-2);
+}
+
+.img-upload-placeholder {
+  width: 80px;
+  height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  border-radius: 6px;
+  border: 1.5px dashed var(--line);
+  background: var(--paper-2);
+  color: var(--slate);
+}
+
+.img-upload-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.btn-upload {
+  padding: 8px 14px;
+  background: var(--ink);
+  color: var(--paper);
+  border: none;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.btn-upload:hover {
+  opacity: 0.9;
+}
+
+.btn-upload:disabled {
+  background: var(--slate);
+  cursor: not-allowed;
+}
+
+.img-upload-hint {
+  font-size: 12px;
+  color: var(--teal);
+}
+
+.upload-progress-bar {
+  width: 100%;
+  height: 4px;
+  background: var(--paper-2);
+  border-radius: 2px;
+  margin-top: 8px;
+  overflow: hidden;
+}
+
+.upload-progress-fill {
+  height: 100%;
+  background: var(--teal);
+  transition: width 0.15s ease;
+}
+

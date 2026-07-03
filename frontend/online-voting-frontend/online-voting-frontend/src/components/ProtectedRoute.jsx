@@ -10,7 +10,8 @@ export function RequireVoter({ children }) {
 }
 
 export function RequireAdmin({ children }) {
-  const { isAdmin } = useApp()
+  const { isAdmin, authLoading } = useApp()
+  if (authLoading) return <div className="page"><p className="subtext" style={{ marginTop: 60 }}>Loading…</p></div>
   if (!isAdmin) return <Navigate to="/admin" replace />
   return children
 }
