@@ -1,8 +1,11 @@
 {
   "services": {
     "frontend": {
-      "root": "frontend/online-voting-frontend/online-voting-frontend",
-      "framework": "vite"
+      "root": "frontend",
+      "framework": "vite",
+      "buildCommand": "cd online-voting-frontend/online-voting-frontend && npm install && npm run build",
+      "outputDirectory": "online-voting-frontend/online-voting-frontend/dist",
+      "installCommand": "echo skip"
     },
     "backend": {
       "root": "backend"
