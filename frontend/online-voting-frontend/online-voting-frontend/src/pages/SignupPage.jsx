@@ -87,7 +87,11 @@ export default function SignupPage() {
             />
           </div>
 
-          {error && <p className="error-text">{error}</p>}
+          {error && (
+            <p className="error-text">
+              {error.message || JSON.stringify(error)}
+            </p>
+          )}
 
           <div className="btn-row">
             <button type="submit" className="btn btn-teal" disabled={loading}>
