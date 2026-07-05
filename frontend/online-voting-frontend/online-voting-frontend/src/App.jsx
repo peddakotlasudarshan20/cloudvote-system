@@ -11,6 +11,7 @@ import AdministrationPage from './pages/AdministrationPage.jsx'
 import { RequireVoter, RequireAdmin } from './components/ProtectedRoute.jsx'
 
 export default function App() {
+  // Application routing structure with voter and admin guards
   return (
     <Routes>
       <Route path="/" element={<HomePage />} />
