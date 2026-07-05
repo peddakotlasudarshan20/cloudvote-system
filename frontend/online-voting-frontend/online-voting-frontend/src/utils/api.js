@@ -1,5 +1,6 @@
 const BASE_URL =
-  import.meta.env.VITE_API_URL ?? 'https://cloudvote-backend-h8in.onrender.com'
+  import.meta.env.VITE_API_URL ||
+  "https://cloudvote-backend-h8in.onrender.com";
 
 async function request(method, path, body) {
   const res = await fetch(`${BASE_URL}${path}`, {
