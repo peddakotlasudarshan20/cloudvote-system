@@ -1,8 +1,30 @@
 {
-  "version": 2,
-  "buildCommand": "cd frontend/online-voting-frontend/online-voting-frontend && npm install && npm run build",
-  "outputDirectory": "frontend/online-voting-frontend/online-voting-frontend/dist",
+  "services": {
+    "frontend": {
+      "root": "frontend",
+      "framework": "vite",
+      "buildCommand": "cd online-voting-frontend/online-voting-frontend && npm install && npm run build",
+      "outputDirectory": "online-voting-frontend/online-voting-frontend/dist",
+      "installCommand": "echo skip"
+    },
+    "backend": {
+      "root": "backend"
+    }
+  },
   "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index.py" }
+    {
+      "source": "/api(/.*)?",
+      "destination": {
+        "type": "service",
+        "service": "backend"
+      }
+    },
+    {
+      "source": "/(.*)",
+      "destination": {
+        "type": "service",
+        "service": "frontend"
+      }
+    }
   ]
 }
