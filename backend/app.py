@@ -1,3 +1,17 @@
+<<<<<<< HEAD
+from flask import Flask
+from flask_cors import CORS
+from models.user import db
+from models.election import Election
+from models.candidate import Candidate
+from models.vote import Vote
+from routes.auth import auth
+from routes.admin import admin
+from routes.election import election
+from routes.candidate import candidate
+from routes.vote import vote
+
+=======
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from pymongo import MongoClient
@@ -6,10 +20,29 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
+>>>>>>> origin/main
 
 app = Flask(__name__)
 CORS(app, origins="*")
 
+<<<<<<< HEAD
+CORS(app)
+
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///database.db"
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+db.init_app(app)
+
+with app.app_context():
+    db.create_all()
+
+
+app.register_blueprint(auth)
+app.register_blueprint(admin)
+app.register_blueprint(election)
+app.register_blueprint(candidate)
+app.register_blueprint(vote)
+=======
 # ── MongoDB connection ──────────────────────────────────────────────────────
 client = MongoClient(os.getenv("MONGODB_URI"))
 db = client[os.getenv("MONGODB_DB", "cloudvote")]
@@ -203,6 +236,7 @@ def admin_login():
         return jsonify({"ok": True})
     return jsonify({"error": "Invalid admin credentials."}), 401
 
+>>>>>>> origin/main
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
