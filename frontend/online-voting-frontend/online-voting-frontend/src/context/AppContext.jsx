@@ -1,143 +1,176 @@
-import React, { createContext, useContext, useEffect, useState } from 'react'
+import React, { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { supabase } from '../utils/supabase.js'
+import { api } from '../utils/api.js'
 
 const AppContext = createContext(null)
-const STORAGE_KEY = 'ovs_data_v1'
-const SESSION_KEY = 'ovs_session_v1'
-
-function loadInitialData() {
-  const raw = localStorage.getItem(STORAGE_KEY)
-  if (raw) {
-    try {
-      return JSON.parse(raw)
-    } catch {
-      // fall through to defaults
-    }
-  }
-  return {
-    admin: { username: 'admin', password: 'admin123' },
-    election: { date: '', startTime: '', endTime: '' },
-    candidates: [],
-    voters: []
-  }
-}
 
 export function AppProvider({ children }) {
-  const [data, setData] = useState(loadInitialData)
-  const [session, setSession] = useState(() => {
-    const raw = sessionStorage.getItem(SESSION_KEY)
-    return raw ? JSON.parse(raw) : { voterPin: null, isAdmin: false }
+  // ── Auth state (Supabase) ────────────────────────────────────────────────
+  const [supabaseUser, setSupabaseUser] = useState(null)
+  const [authLoading, setAuthLoading]   = useState(true)
+
+  // ── App data (MongoDB via API) ───────────────────────────────────────────
+  const [candidates, setCandidates] = useState([])
+  const [voters,     setVoters]     = useState([])
+  const [election,   setElection]   = useState({ date: '', startTime: '', endTime: '' })
+  const [dataLoading, setDataLoading] = useState(true)
+
+  // ── Admin session (sessionStorage, stays local) ──────────────────────────
+  const [isAdmin, setIsAdmin] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem('ovs_admin')) === true } catch { return false }
   })
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data))
-  }, [data])
+    sessionStorage.setItem('ovs_admin', JSON.stringify(isAdmin))
+  }, [isAdmin])
+
+  // ── Load candidates + election on mount ──────────────────────────────────
+  const refreshCandidates = useCallback(async () => {
+    try {
+      const data = await api.getCandidates()
+      setCandidates(data)
+    } catch (e) { console.error('getCandidates:', e) }
+  }, [])
+
+  const refreshVoters = useCallback(async () => {
+    try {
+      const data = await api.getVoters()
+      setVoters(data)
+    } catch (e) { console.error('getVoters:', e) }
+  }, [])
+
+  const refreshElection = useCallback(async () => {
+    try {
+      const data = await api.getElection()
+      setElection(data)
+    } catch (e) { console.error('getElection:', e) }
+  }, [])
 
   useEffect(() => {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session))
-  }, [session])
+    Promise.all([refreshCandidates(), refreshVoters(), refreshElection()])
+      .finally(() => setDataLoading(false))
+  }, [refreshCandidates, refreshVoters, refreshElection])
 
-  // ---------- Election window helper ----------
+  // ── Supabase auth listener ────────────────────────────────────────────────
+  useEffect(() => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const user = session?.user ?? null
+      setSupabaseUser(user)
+      if (user) {
+        // Ensure voter exists in MongoDB (no-op if already registered)
+        const name = user.user_metadata?.full_name || ''
+        try { await api.registerVoter({ email: user.email, name }) } catch { /* ignore */ }
+        await refreshVoters()
+      }
+      setAuthLoading(false)
+    })
+    return () => subscription.unsubscribe()
+  }, [refreshVoters])
+
+  // ── Election window helper ───────────────────────────────────────────────
   function isElectionOpen() {
-    const { date, startTime, endTime } = data.election
-    if (!date || !startTime || !endTime) return true // no restriction configured yet
-    const now = new Date()
+    const { date, startTime, endTime } = election
+    if (!date || !startTime || !endTime) return true
+    const now   = new Date()
     const start = new Date(`${date}T${startTime}`)
-    const end = new Date(`${date}T${endTime}`)
+    const end   = new Date(`${date}T${endTime}`)
     return now >= start && now <= end
   }
 
-  // ---------- Voter actions ----------
-  function signupVoter(name, pin) {
-    if (!name.trim() || !pin.trim()) return { ok: false, message: 'Name and PIN are required.' }
-    if (data.voters.some(v => v.pin === pin)) {
-      return { ok: false, message: 'This PIN is already registered. Please log in instead.' }
-    }
-    const newVoter = { pin, name: name.trim(), hasVoted: false }
-    setData(prev => ({ ...prev, voters: [...prev.voters, newVoter] }))
-    return { ok: true }
-  }
-
-  function loginVoter(pin, name) {
-    const voter = data.voters.find(v => v.pin === pin && v.name.toLowerCase() === name.trim().toLowerCase())
-    if (!voter) return { ok: false, message: 'No matching voter found. Check your PIN and name, or sign up.' }
-    setSession(s => ({ ...s, voterPin: pin }))
-    return { ok: true }
-  }
-
-  function logoutVoter() {
-    setSession(s => ({ ...s, voterPin: null }))
-  }
-
+  // ── Voter helpers ────────────────────────────────────────────────────────
   function getCurrentVoter() {
-    return data.voters.find(v => v.pin === session.voterPin) || null
+    if (!supabaseUser) return null
+    return voters.find(v => v.email === supabaseUser.email) || null
   }
 
-  function castVote(candidateId) {
+  async function logoutVoter() {
+    await supabase.auth.signOut()
+    setSupabaseUser(null)
+  }
+
+  async function castVote(candidateId) {
+    if (!supabaseUser) return { ok: false, message: 'You must log in first.' }
     const voter = getCurrentVoter()
-    if (!voter) return { ok: false, message: 'You must log in first.' }
-    if (voter.hasVoted) return { ok: false, message: 'You have already voted. Each voter may vote only once.' }
+    if (voter?.hasVoted) return { ok: false, message: 'You have already voted. Each voter may vote only once.' }
     if (!isElectionOpen()) return { ok: false, message: 'Voting is not open right now. Check the election schedule.' }
 
-    setData(prev => ({
-      ...prev,
-      voters: prev.voters.map(v => v.pin === voter.pin ? { ...v, hasVoted: true } : v),
-      candidates: prev.candidates.map(c => c.id === candidateId ? { ...c, votes: c.votes + 1 } : c)
-    }))
-    return { ok: true }
-  }
-
-  // ---------- Admin actions ----------
-  function loginAdmin(username, password) {
-    if (data.admin.username === username.trim() && data.admin.password === password) {
-      setSession(s => ({ ...s, isAdmin: true }))
+    try {
+      await api.castVote({ email: supabaseUser.email, candidateId })
+      await Promise.all([refreshCandidates(), refreshVoters()])
       return { ok: true }
+    } catch (e) {
+      return { ok: false, message: e.message }
     }
-    return { ok: false, message: 'Invalid admin credentials.' }
   }
 
-  function logoutAdmin() {
-    setSession(s => ({ ...s, isAdmin: false }))
+  // ── Admin actions ────────────────────────────────────────────────────────
+  async function loginAdmin(username, password) {
+    try {
+      await api.adminLogin({ username, password })
+      setIsAdmin(true)
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, message: e.message || 'Invalid admin credentials.' }
+    }
   }
 
-  function adminAddCandidate(name, symbol) {
-    if (!name.trim() || !symbol.trim()) return { ok: false, message: 'Candidate name and symbol are required.' }
-    const id = 'c_' + Date.now()
-    setData(prev => ({ ...prev, candidates: [...prev.candidates, { id, name: name.trim(), symbol: symbol.trim(), votes: 0 }] }))
-    return { ok: true }
+  function logoutAdmin() { setIsAdmin(false) }
+
+  async function adminAddCandidate(name, symbol, party, partyLogo, bio, photoUrl, partyLogoUrl) {
+    if (!name.trim()) return { ok: false, message: 'Candidate name is required.' }
+    try {
+      await api.addCandidate({ name, symbol, party, partyLogo, bio, photoUrl, partyLogoUrl })
+      await refreshCandidates()
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, message: e.message }
+    }
   }
 
-  function adminRemoveCandidate(id) {
-    setData(prev => ({ ...prev, candidates: prev.candidates.filter(c => c.id !== id) }))
+  async function adminRemoveCandidate(id) {
+    try {
+      await api.deleteCandidate(id)
+      await refreshCandidates()
+    } catch (e) { console.error(e) }
   }
 
-  function adminAddVoter(name, pin) {
-    return signupVoter(name, pin)
+  async function adminAddVoter(email, name) {
+    if (!email.trim()) return { ok: false, message: 'Email is required.' }
+    try {
+      await api.adminAddVoter({ email, name })
+      await refreshVoters()
+      return { ok: true }
+    } catch (e) {
+      return { ok: false, message: e.message }
+    }
   }
 
-  function adminRemoveVoter(pin) {
-    setData(prev => ({ ...prev, voters: prev.voters.filter(v => v.pin !== pin) }))
+  async function adminRemoveVoter(email) {
+    try {
+      await api.deleteVoter(email)
+      await refreshVoters()
+    } catch (e) { console.error(e) }
   }
 
-  function setElectionSchedule(date, startTime, endTime) {
-    setData(prev => ({ ...prev, election: { date, startTime, endTime } }))
+  async function setElectionSchedule(date, startTime, endTime) {
+    try {
+      await api.setElection({ date, startTime, endTime })
+      setElection({ date, startTime, endTime })
+    } catch (e) { console.error(e) }
   }
+
+  // ── Legacy data shape for pages that still use data.candidates / data.voters
+  const data = { candidates, voters, election }
 
   const value = {
-    data,
-    session,
+    data, supabaseUser, authLoading, isAdmin, dataLoading,
     isElectionOpen,
-    signupVoter,
-    loginVoter,
-    logoutVoter,
-    getCurrentVoter,
-    castVote,
-    loginAdmin,
-    logoutAdmin,
-    adminAddCandidate,
-    adminRemoveCandidate,
-    adminAddVoter,
-    adminRemoveVoter,
-    setElectionSchedule
+    getCurrentVoter, logoutVoter, castVote,
+    loginAdmin, logoutAdmin,
+    adminAddCandidate, adminRemoveCandidate,
+    adminAddVoter, adminRemoveVoter,
+    setElectionSchedule,
+    refreshCandidates, refreshVoters,
   }
 
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>

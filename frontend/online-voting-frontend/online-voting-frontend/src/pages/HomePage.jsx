@@ -1,7 +1,17 @@
-import React from 'react'
-import { Link } from 'react-router-dom'
+import React, { useEffect } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { useApp } from '../context/AppContext.jsx'
 
 export default function HomePage() {
+  const { supabaseUser } = useApp()
+  const navigate = useNavigate()
+
+  useEffect(() => {
+    if (supabaseUser) {
+      navigate('/vote')
+    }
+  }, [supabaseUser, navigate])
+
   return (
     <div className="page">
       <div className="topbar">
@@ -11,11 +21,14 @@ export default function HomePage() {
 
       <div className="stub-card" style={{ textAlign: 'center', paddingTop: 48, paddingBottom: 40 }}>
         <h1 className="display">Welcome to the<br />Online Voting System</h1>
-        <p className="subtext">Cast your vote securely, from any device. Registered voters log in below — new voters can sign up with a name and PIN.</p>
+        <p className="subtext">
+          Cast your vote securely, from any device.<br />
+          New here? Register first. Already signed up? Log in to vote or check your status.
+        </p>
 
         <div className="btn-row">
-          <Link to="/login" className="btn btn-primary">Login</Link>
-          <Link to="/signup" className="btn btn-outline">Sign up (new voter)</Link>
+          <Link to="/signup" className="btn btn-teal">📋 Register to vote</Link>
+          <Link to="/login" className="btn btn-primary">🔑 Already registered? Log in</Link>
         </div>
 
         <p style={{ marginTop: 24 }}>

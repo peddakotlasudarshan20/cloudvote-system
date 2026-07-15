@@ -9,9 +9,10 @@ export default function AdminLoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault()
-    const result = loginAdmin(username, password)
+    setError('')
+    const result = await loginAdmin(username, password)
     if (!result.ok) {
       setError(result.message)
       return

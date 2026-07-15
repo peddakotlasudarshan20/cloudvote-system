@@ -33,6 +33,11 @@ function Login() {
     }
   };
 
+<<<<<<< HEAD
+=======
+export default function App() {
+  // Application routing structure with voter and admin guards
+>>>>>>> origin/main
   return (
     <div className="container mt-5">
       <h2>User Login</h2>
